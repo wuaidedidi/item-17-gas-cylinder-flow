@@ -1,0 +1,293 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  WAREHOUSE_MANAGER
+  SAFETY_OFFICER
+  INSPECTOR
+  GENERAL_USER
+}
+
+enum UserStatus {
+  ACTIVE
+  DISABLED
+}
+
+enum CylinderStatus {
+  IN_STOCK
+  IN_TRANSIT
+  UNDER_INSPECTION
+  IN_MAINTENANCE
+  SCRAPPED
+}
+
+enum RecordStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  REJECTED
+}
+
+enum WarningSeverity {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum WarningStatus {
+  OPEN
+  PROCESSING
+  CLOSED
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum ApprovalTargetType {
+  CYLINDER
+  INBOUND
+  OUTBOUND
+  INSPECTION
+  MAINTENANCE
+  WARNING
+}
+
+enum TraceQuerySource {
+  MANUAL
+  SCANNER
+  LIST
+}
+
+model User {
+  id          Int          @id @default(autoincrement())
+  username    String       @unique @db.VarChar(64)
+  password    String       @db.VarChar(255)
+  name        String       @db.VarChar(64)
+  phone       String?      @db.VarChar(32)
+  email       String?      @db.VarChar(128)
+  role        UserRole     @default(GENERAL_USER)
+  status      UserStatus   @default(ACTIVE)
+  remark      String?      @db.Text
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  createdCylinders    Cylinder[]        @relation("CylinderCreatedBy")
+  updatedCylinders    Cylinder[]        @relation("CylinderUpdatedBy")
+  inboundRecords      InboundRecord[]   @relation("InboundCreatedBy")
+  outboundRecords     OutboundRecord[]  @relation("OutboundCreatedBy")
+  inspectionRecords   InspectionRecord[] @relation("InspectionCreatedBy")
+  maintenanceRecords  MaintenanceRecord[] @relation("MaintenanceCreatedBy")
+  warningRules        WarningRule[]     @relation("WarningRuleCreatedBy")
+  warningsCreated     Warning[]         @relation("WarningCreatedBy")
+  warningsHandled     Warning[]         @relation("WarningHandledBy")
+  traceLogs           TraceLog[]        @relation("TraceCreatedBy")
+  approvalCreated     ApprovalLog[]     @relation("ApprovalCreatedBy")
+  approvalHandled     ApprovalLog[]     @relation("ApprovalHandledBy")
+
+  @@map("users")
+}
+
+model Cylinder {
+  id                 Int              @id @default(autoincrement())
+  code               String           @unique @db.VarChar(64)
+  name               String           @db.VarChar(128)
+  type               String?          @db.VarChar(64)
+  gasType            String?          @db.VarChar(64)
+  capacity           String?          @db.VarChar(64)
+  pressureLevel      String?          @db.VarChar(64)
+  manufacturer       String?          @db.VarChar(128)
+  serialNo           String?          @db.VarChar(128)
+  warehouseLocation  String?          @db.VarChar(128)
+  currentHolder      String?          @db.VarChar(128)
+  status             CylinderStatus   @default(IN_STOCK)
+  lastInspectionAt   DateTime?
+  nextInspectionAt   DateTime?
+  nextMaintenanceAt  DateTime?
+  remark             String?          @db.Text
+  createdById        Int?
+  updatedById        Int?
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+
+  createdBy          User?            @relation("CylinderCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedBy          User?            @relation("CylinderUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  inboundRecords     InboundRecord[]
+  outboundRecords    OutboundRecord[]
+  inspectionRecords  InspectionRecord[]
+  maintenanceRecords MaintenanceRecord[]
+  warnings           Warning[]
+  traceLogs          TraceLog[]
+
+  @@map("cylinders")
+}
+
+model InboundRecord {
+  id                 Int           @id @default(autoincrement())
+  recordNo           String        @unique @db.VarChar(64)
+  cylinderId         Int
+  inboundAt          DateTime
+  sourceLocation     String?       @db.VarChar(128)
+  destinationLocation String?      @db.VarChar(128)
+  handlerName        String        @db.VarChar(64)
+  status             RecordStatus  @default(COMPLETED)
+  remark             String?       @db.Text
+  createdById        Int?
+  createdAt          DateTime      @default(now())
+
+  cylinder           Cylinder      @relation(fields: [cylinderId], references: [id], onDelete: Restrict)
+  createdBy          User?         @relation("InboundCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@map("inbound_records")
+}
+
+model OutboundRecord {
+  id                 Int           @id @default(autoincrement())
+  recordNo           String        @unique @db.VarChar(64)
+  cylinderId         Int
+  outboundAt         DateTime
+  targetLocation     String?       @db.VarChar(128)
+  handlerName        String        @db.VarChar(64)
+  purpose            String?       @db.VarChar(128)
+  status             RecordStatus  @default(COMPLETED)
+  remark             String?       @db.Text
+  createdById        Int?
+  createdAt          DateTime      @default(now())
+
+  cylinder           Cylinder      @relation(fields: [cylinderId], references: [id], onDelete: Restrict)
+  createdBy          User?         @relation("OutboundCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@map("outbound_records")
+}
+
+model InspectionRecord {
+  id                 Int           @id @default(autoincrement())
+  recordNo           String        @unique @db.VarChar(64)
+  cylinderId         Int
+  inspectedAt        DateTime
+  inspectorName      String        @db.VarChar(64)
+  result             String        @db.VarChar(128)
+  isAbnormal         Boolean       @default(false)
+  issues             String?       @db.Text
+  nextInspectionAt   DateTime?
+  status             RecordStatus  @default(COMPLETED)
+  remark             String?       @db.Text
+  createdById        Int?
+  createdAt          DateTime      @default(now())
+
+  cylinder           Cylinder      @relation(fields: [cylinderId], references: [id], onDelete: Restrict)
+  createdBy          User?         @relation("InspectionCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@map("inspection_records")
+}
+
+model MaintenanceRecord {
+  id                 Int           @id @default(autoincrement())
+  recordNo           String        @unique @db.VarChar(64)
+  cylinderId         Int
+  maintainedAt       DateTime
+  technicianName     String        @db.VarChar(64)
+  content            String        @db.Text
+  result             String?       @db.VarChar(128)
+  nextMaintenanceAt  DateTime?
+  status             RecordStatus  @default(COMPLETED)
+  remark             String?       @db.Text
+  createdById        Int?
+  createdAt          DateTime      @default(now())
+
+  cylinder           Cylinder      @relation(fields: [cylinderId], references: [id], onDelete: Restrict)
+  createdBy          User?         @relation("MaintenanceCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@map("maintenance_records")
+}
+
+model WarningRule {
+  id              Int             @id @default(autoincrement())
+  ruleName        String          @db.VarChar(128)
+  ruleType        String          @db.VarChar(64)
+  thresholdValue  Int
+  severity        WarningSeverity
+  enabled         Boolean         @default(true)
+  description     String?         @db.Text
+  createdById     Int?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  createdBy       User?           @relation("WarningRuleCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  warnings        Warning[]
+
+  @@map("warning_rules")
+}
+
+model Warning {
+  id              Int              @id @default(autoincrement())
+  warningNo       String           @unique @db.VarChar(64)
+  cylinderId      Int?
+  ruleId          Int?
+  title           String           @db.VarChar(128)
+  content         String           @db.Text
+  severity        WarningSeverity
+  status          WarningStatus    @default(OPEN)
+  source          String           @db.VarChar(64)
+  detectedAt      DateTime         @default(now())
+  handledAt       DateTime?
+  handledById     Int?
+  resolvedRemark  String?          @db.Text
+  createdById     Int?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  cylinder        Cylinder?        @relation(fields: [cylinderId], references: [id], onDelete: SetNull)
+  rule            WarningRule?     @relation(fields: [ruleId], references: [id], onDelete: SetNull)
+  handledBy       User?            @relation("WarningHandledBy", fields: [handledById], references: [id], onDelete: SetNull)
+  createdBy       User?            @relation("WarningCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@map("warnings")
+}
+
+model TraceLog {
+  id              Int               @id @default(autoincrement())
+  cylinderId      Int?
+  cylinderCode    String            @db.VarChar(64)
+  queryKeyword    String?           @db.VarChar(128)
+  traceType       String            @db.VarChar(64)
+  querySource     TraceQuerySource   @default(MANUAL)
+  resultSummary   String?           @db.Text
+  operatorName    String?           @db.VarChar(64)
+  createdById     Int?
+  createdAt       DateTime          @default(now())
+
+  cylinder        Cylinder?         @relation(fields: [cylinderId], references: [id], onDelete: SetNull)
+  createdBy       User?             @relation("TraceCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@map("trace_logs")
+}
+
+model ApprovalLog {
+  id              Int               @id @default(autoincrement())
+  approvalNo      String            @unique @db.VarChar(64)
+  targetType      ApprovalTargetType
+  targetId        Int
+  action          String            @db.VarChar(128)
+  status          ApprovalStatus    @default(PENDING)
+  opinion         String?           @db.Text
+  approverId      Int?
+  createdById     Int?
+  approvedAt      DateTime?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  approver        User?             @relation("ApprovalHandledBy", fields: [approverId], references: [id], onDelete: SetNull)
+  createdBy       User?             @relation("ApprovalCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@map("approval_logs")
+}
